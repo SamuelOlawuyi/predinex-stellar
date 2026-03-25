@@ -46,7 +46,7 @@ describe('BettingSection', () => {
 
   it('renders betting section with pool information', () => {
     vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as any,
+      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as unknown as any,
       userSession: {} as any,
       setUserData: vi.fn(),
       openWalletModal: vi.fn(),
@@ -72,7 +72,7 @@ describe('BettingSection', () => {
       isLoading: false,
       authenticate,
       signOut: vi.fn(),
-    });
+    } as any);
 
     render(<BettingSection pool={mockPool} poolId={0} />);
 
@@ -82,7 +82,7 @@ describe('BettingSection', () => {
 
   it('validates bet amount before placing bet', async () => {
     vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as any,
+      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as unknown as any,
       userSession: {} as any,
       setUserData: vi.fn(),
       openWalletModal: vi.fn(),
@@ -107,7 +107,7 @@ describe('BettingSection', () => {
 
   it('validates minimum bet amount', async () => {
     vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as any,
+      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as unknown as any,
       userSession: {} as any,
       setUserData: vi.fn(),
       openWalletModal: vi.fn(),
@@ -131,7 +131,7 @@ describe('BettingSection', () => {
 
   it('calls openContractCall with correct parameters when placing bet', async () => {
     vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as any,
+      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as unknown as any,
       userSession: {} as any,
       setUserData: vi.fn(),
       openWalletModal: vi.fn(),
@@ -167,14 +167,14 @@ describe('BettingSection', () => {
 
   it('disables buttons while betting is in progress', async () => {
     vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as any,
+      userData: { profile: { stxAddress: { mainnet: 'ST123' } } } as unknown as any,
       userSession: {} as any,
       setUserData: vi.fn(),
       openWalletModal: vi.fn(),
       isLoading: false,
       authenticate: vi.fn(),
       signOut: vi.fn(),
-    });
+    } as any);
 
     // Make openContractCall hang
     vi.mocked(StacksConnect.openContractCall).mockImplementation(
