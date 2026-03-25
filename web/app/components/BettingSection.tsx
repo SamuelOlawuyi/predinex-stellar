@@ -32,7 +32,8 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
             const timer = setTimeout(() => setWalletBalance(100.0), 0); // Mock balance for testing
             return () => clearTimeout(timer);
         } else {
-            setWalletBalance(null);
+            const timer = setTimeout(() => setWalletBalance(null), 0);
+            return () => clearTimeout(timer);
         }
     }, [isConnected]);
 
