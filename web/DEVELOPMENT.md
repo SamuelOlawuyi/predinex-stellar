@@ -65,7 +65,12 @@ We use a custom component library located in `web/components/ui/`. Key component
 
 ## Testing
 
-Ensure your changes don't break the build:
+### Local CI/CD Checks
+
+Before pushing, ensure all checks pass:
+
 ```bash
+npm run lint
+npm run test
 npm run build
 ```

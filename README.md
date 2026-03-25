@@ -114,6 +114,30 @@ Predinex Stellar follows a phased approach to bring a premium betting experience
 - 📅 Decentralized Oracle integration.
 - 📅 Governance dashboard for platform parameters.
 
+## 🛠️ CI/CD Pipeline
+
+The project uses GitHub Actions to ensure code quality and prevent regressions. The workflow runs on every push and pull request to `main`.
+
+### Local Verification
+
+You can run the same checks locally to verify your changes before pushing:
+
+**Web App:**
+```bash
+cd web
+npm run lint
+npm run test
+npm run build
+```
+
+**Smart Contracts:**
+```bash
+cd contracts/predinex
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+```
+
 ---
 
 ## 📄 License
