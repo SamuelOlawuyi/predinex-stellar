@@ -2,7 +2,7 @@
 
 import Navbar from "../../components/Navbar";
 import BettingSection from "../../components/BettingSection";
-import ClaimWinningsButton from "../../components/ClaimWinningsButton";
+import ClaimWinningsButton from "../../../components/ClaimWinningsButton";
 import { useStacks } from "../../components/StacksProvider";
 import { useEffect, useState } from "react";
 import { getPool, Pool, getUserBet } from "../../lib/stacks-api";
@@ -19,6 +19,7 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
 
     const [pool, setPool] = useState<Pool | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [userBet, setUserBet] = useState<{ amountA: number; amountB: number } | null>(null);
 
     useEffect(() => {
@@ -35,6 +36,44 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
             }).catch(() => setUserBet(null));
         }
     }, [stxAddress, poolId]);
+
+    const refreshPoolData = async () => {
+        if (isRefreshing) return;
+        setIsRefreshing(true);
+
+        try {
+            const [newPool, newBet] = await Promise.all([
+                getPool(poolId),
+                stxAddress ? getUserBet(poolId, stxAddress) : Promise.resolve(null)
+            ]);
+
+            if (newPool) setPool(newPool);
+            if (newBet) setUserBet(newBet);
+        } catch (error) {
+            console.error("Failed to refresh pool data:", error);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
+    const handleBetSuccess = (outcome: number, amountMicroSTX: number) => {
+        // Optimistic update
+        const amount = amountMicroSTX; // Since pool totals are in microSTX as well (verified in stacks-api.ts)
+        setPool(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                totalA: outcome === 0 ? prev.totalA + amount : prev.totalA,
+                totalB: outcome === 1 ? prev.totalB + amount : prev.totalB,
+            };
+        });
+
+        // Trigger real refresh after a small delay to allow on-chain propagation
+        // and handle potential backend indexing delays.
+        setTimeout(refreshPoolData, 3000);
+        // Also refresh immediately to catch any mempool updates if supported by the node
+        refreshPoolData();
+    };
 
     const userHasWinnings = pool?.settled && userBet &&
         ((pool.winningOutcome === 0 && userBet.amountA > 0) ||
@@ -157,11 +196,23 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
                             <ClaimWinningsButton
                                 poolId={poolId}
                                 isSettled={pool.settled}
-                                userHasWinnings={userHasWinnings}
+                                userHasWinnings={!!userHasWinnings}
                             />
                         </div>
                     ) : (
-                        <BettingSection pool={pool} poolId={poolId} />
+                        <div className="relative">
+                            {isRefreshing && (
+                                <div className="absolute -top-6 right-0 flex items-center gap-2 text-xs text-primary animate-pulse">
+                                    <div className="w-2 h-2 bg-primary rounded-full" />
+                                    Reconciling on-chain data...
+                                </div>
+                            )}
+                            <BettingSection
+                                pool={pool}
+                                poolId={poolId}
+                                onBetSuccess={handleBetSuccess}
+                            />
+                        </div>
                     )}
                 </div>
             </div>

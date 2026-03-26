@@ -13,9 +13,10 @@ import { Pool } from '@/app/lib/stacks-api';
 interface BettingSectionProps {
     pool: Pool;
     poolId: number;
+    onBetSuccess?: (outcome: number, amount: number) => void;
 }
 
-export default function BettingSection({ pool, poolId }: BettingSectionProps) {
+export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSectionProps) {
     const { userData, authenticate } = useStacks();
     const { isConnected, address } = useWalletConnection();
     const { showToast } = useToast();
@@ -67,6 +68,9 @@ export default function BettingSection({ pool, poolId }: BettingSectionProps) {
                     showToast(`Bet placed successfully!`, "success");
                     setIsBetting(false);
                     setBetAmount("");
+                    if (onBetSuccess) {
+                        onBetSuccess(outcome, amountInMicroStx);
+                    }
                 },
                 onCancel: () => {
                     console.log('User cancelled bet transaction');
