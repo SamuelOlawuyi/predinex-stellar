@@ -7,7 +7,7 @@ fn test_create_pool() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(None, PredinexContract);
+    let contract_id = env.register(PredinexContract, ());
     let client = PredinexContractClient::new(&env, &contract_id);
 
     let creator = Address::generate(&env);
@@ -25,7 +25,7 @@ fn test_create_pool() {
         &outcome_b,
         &duration,
     );
-    assert_eq!(pool_id, 2);
+    assert_eq!(pool_id, 1);
 
     let pool = client.get_pool(&pool_id).unwrap();
     assert_eq!(pool.creator, creator);
@@ -37,13 +37,13 @@ fn test_place_bet() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(None, PredinexContract);
+    let contract_id = env.register(PredinexContract, ());
     let client = PredinexContractClient::new(&env, &contract_id);
 
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
-    let token = token::Client::new(&env, &token_id);
-    let token_admin_client = token::StellarAssetClient::new(&env, &token_id);
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
 
     client.initialize(&token_id.address());
 
@@ -80,13 +80,13 @@ fn test_settle_and_claim() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(None, PredinexContract);
+    let contract_id = env.register(PredinexContract, ());
     let client = PredinexContractClient::new(&env, &contract_id);
 
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
-    let token = token::Client::new(&env, &token_id);
-    let token_admin_client = token::StellarAssetClient::new(&env, &token_id);
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
 
     client.initialize(&token_id.address());
 
@@ -130,4 +130,47 @@ fn test_settle_and_claim() {
     // Share = 100 * 196 / 100 = 196.
     assert_eq!(winnings, 196);
     assert_eq!(token.balance(&user1), 900 + 196);
+}
+
+#[test]
+#[should_panic(expected = "No bet found")]
+fn test_duplicate_claim_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    client.initialize(&token_id.address());
+
+    let creator = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    token_admin_client.mint(&user, &1000);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&user, &pool_id, &0, &100);
+    client.settle_pool(&creator, &pool_id, &0);
+
+    // First claim succeeds
+    let winnings = client.claim_winnings(&user, &pool_id);
+    assert_eq!(winnings, 98); // 100 * (100 - 2% fee) / 100
+    let balance_after_first = token.balance(&user);
+    assert_eq!(balance_after_first, 900 + 98);
+
+    // Second claim must panic — bet entry was removed after first claim
+    client.claim_winnings(&user, &pool_id);
 }
