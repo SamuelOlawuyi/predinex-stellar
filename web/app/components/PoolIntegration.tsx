@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useWallet } from './WalletAdapterProvider';
 import { useWalletConnect } from '../lib/hooks/useWalletConnect';
-import { openContractCall } from '@stacks/connect';
-import { uintCV, stringAsciiCV } from '@stacks/transactions';
 import { Loader2, AlertCircle, CheckCircle, TrendingUp, Users } from 'lucide-react';
+import { formatDisplayAddress } from '../lib/address-display';
 
 interface Pool {
   id: number;
@@ -32,6 +31,8 @@ interface PoolStats {
 export default function PoolIntegration() {
   const { isConnected } = useWallet();
   const { session } = useWalletConnect();
+  const { isConnected } = useAppKitAccount();
+  const { isMismatch, expectedNetworkName, switchNetwork } = useNetworkMismatch();
   const [pools, setPools] = useState<Pool[]>([]);
   const [stats, setStats] = useState<PoolStats>({
     totalPools: 0,
@@ -216,15 +217,25 @@ export default function PoolIntegration() {
 
                   {/* Pool Info */}
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Creator: {pool.creator.slice(0, 8)}...</span>
+                    <span>Creator: {formatDisplayAddress(pool.creator)}</span>
                     <span>Expires in {pool.expiryBlock} blocks</span>
                   </div>
 
                   {/* Action Button */}
-                  {!pool.settled && (session?.isConnected || isConnected) && (
-                    <button className="w-full py-2 bg-primary hover:bg-violet-600 text-white font-bold rounded-lg transition-all">
-                      Place Bet
-                    </button>
+                  {!pool.settled && (isConnected || userData) && (
+                    <div className="space-y-2">
+                      <button 
+                        disabled={isMismatch}
+                        className="w-full py-2 bg-primary hover:bg-violet-600 text-white font-bold rounded-lg transition-all disabled:opacity-50"
+                      >
+                        Place Bet
+                      </button>
+                      {isMismatch && (
+                        <p className="text-xs text-red-500 font-medium text-center">
+                          Please switch to {expectedNetworkName} to interact.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
