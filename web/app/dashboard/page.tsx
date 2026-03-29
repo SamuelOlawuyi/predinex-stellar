@@ -7,11 +7,11 @@ import ActivityFeed from "../components/ActivityFeed";
 import ActiveBetsCard from "../components/dashboard/ActiveBetsCard";
 import { useUserActivity } from "../hooks/useUserActivity";
 import { useActiveBets } from "../lib/hooks/useActiveBets";
-import { useStacks } from "../components/StacksProvider";
+import { useWallet } from "../components/WalletAdapterProvider";
+import RouteErrorBoundary from "../../components/RouteErrorBoundary";
 
-export default function Dashboard() {
-    const { userData } = useStacks();
-    const stxAddress = userData?.profile?.stxAddress?.mainnet || userData?.profile?.stxAddress?.testnet || userData?.identityAddress;
+function DashboardContent() {
+    const { address: stxAddress } = useWallet();
 
     const { activities, isLoading: activityLoading, error: activityError, refresh: refreshActivity } = useUserActivity(stxAddress, 5);
     const { activeBets, isLoading: betsLoading, refresh: refreshBets } = useActiveBets(stxAddress);
@@ -54,5 +54,13 @@ export default function Dashboard() {
                 </div>
             </AuthGuard>
         </main>
+    );
+}
+
+export default function Dashboard() {
+    return (
+        <RouteErrorBoundary routeName="Dashboard">
+            <DashboardContent />
+        </RouteErrorBoundary>
     );
 }
