@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { predinexReadApi } from '../lib/adapters/predinex-read-api';
 import type { ActivityItem } from '../lib/adapters/types';
+import { userActivityCache } from '../lib/cache-invalidation';
 
 interface UseUserActivityReturn {
     activities: ActivityItem[];
@@ -14,6 +15,8 @@ interface UseUserActivityReturn {
 /**
  * Hook to fetch and manage a user's on-chain activity feed.
  * Automatically fetches when an address is provided.
+ * Uses the shared userActivityCache so mutation-driven invalidation
+ * (via invalidateOnPlaceBet / invalidateOnClaimWinnings) forces a fresh fetch.
  */
 export function useUserActivity(
     address: string | undefined,
@@ -29,11 +32,19 @@ export function useUserActivity(
             return;
         }
 
+        // Return in-memory cached result if still fresh
+        const cached = userActivityCache.get<ActivityItem[]>(address);
+        if (cached) {
+            setActivities(cached);
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
 
         try {
             const data = await predinexReadApi.getUserActivity(address, limit);
+            userActivityCache.set(address, data);
             setActivities(data);
         } catch (e) {
             setError('Failed to load activity. Please try again.');

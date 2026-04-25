@@ -11,6 +11,7 @@ import {
     classifyConnectivityIssue,
     getConnectivityMessage,
 } from '../lib/network-errors';
+import { invalidateOnPlaceBet } from '../lib/cache-invalidation';
 
 interface BettingSectionProps {
     pool: Pool;
@@ -68,6 +69,10 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
                 onFinish: (data) => {
                     window.clearTimeout(slowNetworkTimer);
                     console.log('Bet placed successfully:', data);
+                    // Invalidate all caches affected by this bet
+                    if (address) {
+                        invalidateOnPlaceBet({ poolId, userAddress: address });
+                    }
                     showToastPayload(showToast, toastMessages.bet.success);
                     setIsBetting(false);
                     setBetAmount("");
