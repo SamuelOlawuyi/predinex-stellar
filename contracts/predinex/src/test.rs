@@ -2553,3 +2553,293 @@ fn l4_successful_claim_reconciles_treasury_and_balances() {
         "remaining contract balance must equal the unclaimed treasury fee"
     );
 }
+
+#[test]
+fn test_create_pool_rejects_empty_title() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let empty_title = String::from_str(&env, "");
+    let description = String::from_str(&env, "Valid description");
+    let outcome_a = String::from_str(&env, "Yes");
+    let outcome_b = String::from_str(&env, "No");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &empty_title,
+            &description,
+            &outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when title is empty");
+}
+
+#[test]
+fn test_create_pool_rejects_whitespace_only_title() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let whitespace_title = String::from_str(&env, "   ");
+    let description = String::from_str(&env, "Valid description");
+    let outcome_a = String::from_str(&env, "Yes");
+    let outcome_b = String::from_str(&env, "No");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &whitespace_title,
+            &description,
+            &outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when title is whitespace-only");
+}
+
+#[test]
+fn test_create_pool_rejects_empty_description() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "Valid title");
+    let empty_description = String::from_str(&env, "");
+    let outcome_a = String::from_str(&env, "Yes");
+    let outcome_b = String::from_str(&env, "No");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &empty_description,
+            &outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when description is empty");
+}
+
+#[test]
+fn test_create_pool_rejects_whitespace_only_description() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "Valid title");
+    let whitespace_description = String::from_str(&env, "\t\n\r ");
+    let outcome_a = String::from_str(&env, "Yes");
+    let outcome_b = String::from_str(&env, "No");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &whitespace_description,
+            &outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when description is whitespace-only");
+}
+
+#[test]
+fn test_create_pool_rejects_empty_outcome_a() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "Valid title");
+    let description = String::from_str(&env, "Valid description");
+    let empty_outcome_a = String::from_str(&env, "");
+    let outcome_b = String::from_str(&env, "No");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &description,
+            &empty_outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when outcome_a is empty");
+}
+
+#[test]
+fn test_create_pool_rejects_whitespace_only_outcome_a() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "Valid title");
+    let description = String::from_str(&env, "Valid description");
+    let whitespace_outcome_a = String::from_str(&env, "  \t  ");
+    let outcome_b = String::from_str(&env, "No");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &description,
+            &whitespace_outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when outcome_a is whitespace-only");
+}
+
+#[test]
+fn test_create_pool_rejects_empty_outcome_b() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "Valid title");
+    let description = String::from_str(&env, "Valid description");
+    let outcome_a = String::from_str(&env, "Yes");
+    let empty_outcome_b = String::from_str(&env, "");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &description,
+            &outcome_a,
+            &empty_outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when outcome_b is empty");
+}
+
+#[test]
+fn test_create_pool_rejects_whitespace_only_outcome_b() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "Valid title");
+    let description = String::from_str(&env, "Valid description");
+    let outcome_a = String::from_str(&env, "Yes");
+    let whitespace_outcome_b = String::from_str(&env, "\n\r\t");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &description,
+            &outcome_a,
+            &whitespace_outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_err(), "Should panic when outcome_b is whitespace-only");
+}
+
+#[test]
+fn test_create_pool_accepts_valid_metadata() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "Valid Market Title");
+    let description = String::from_str(&env, "This is a valid description with content");
+    let outcome_a = String::from_str(&env, "Yes");
+    let outcome_b = String::from_str(&env, "No");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &description,
+            &outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_ok(), "Should succeed with valid metadata");
+}
+
+#[test]
+fn test_create_pool_accepts_whitespace_with_content() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let title = String::from_str(&env, "  Title with leading and trailing spaces  ");
+    let description = String::from_str(&env, " Description with content and spaces ");
+    let outcome_a = String::from_str(&env, "  Yes  ");
+    let outcome_b = String::from_str(&env, "  No  ");
+    let duration = 3600;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &title,
+            &description,
+            &outcome_a,
+            &outcome_b,
+            &duration,
+        );
+    }));
+
+    assert!(result.is_ok(), "Should succeed when strings have whitespace but also content");
+}
