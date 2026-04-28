@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { validateStellarAddress, validateStellarContractAddress } from '../../app/lib/validators';
+import {
+  validateContractId,
+  validateDuration,
+  MIN_POOL_DURATION_SECS,
+  MAX_POOL_DURATION_SECS,
+} from '../../app/lib/validators';
+
+describe('validateContractId', () => {
+  describe('valid identifiers', () => {
+    it('accepts a valid mainnet contract identifier', () => {
+      const result = validateContractId(
+        'SPENV2J0V4BHRFAZ6FVF97K9ZGQJ0GT19RC3JFN7.predinex-pool',
+        'mainnet'
+      );
+      expect(result.valid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
 
 describe('validateStellarAddress', () => {
   describe('valid addresses', () => {
@@ -128,5 +144,50 @@ describe('validateStellarContractAddress', () => {
       expect(result.valid).toBe(false);
       expect(result.error).toMatch(/invalid.*contract.*address/i);
     });
+  });
+});
+
+describe('validateDuration (issue #151)', () => {
+  it('exposes the contract minimum as 300 seconds', () => {
+    expect(MIN_POOL_DURATION_SECS).toBe(300);
+  });
+
+  it('rejects 0 with a "greater than 0" error', () => {
+    const result = validateDuration(0);
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/greater than 0/i);
+  });
+
+  it('rejects a negative duration', () => {
+    const result = validateDuration(-1);
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a duration just below the contract minimum', () => {
+    const result = validateDuration(MIN_POOL_DURATION_SECS - 1);
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/at least 300 seconds/i);
+  });
+
+  it('accepts a duration exactly at the contract minimum', () => {
+    const result = validateDuration(MIN_POOL_DURATION_SECS);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('accepts a typical duration well above the minimum', () => {
+    const result = validateDuration(3600);
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects a duration above the soft upper bound', () => {
+    const result = validateDuration(MAX_POOL_DURATION_SECS + 1);
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/less than/i);
+  });
+
+  it('accepts a duration exactly at the upper bound', () => {
+    const result = validateDuration(MAX_POOL_DURATION_SECS);
+    expect(result.valid).toBe(true);
   });
 });
