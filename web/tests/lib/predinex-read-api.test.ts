@@ -1,81 +1,116 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as sorobanReadApi from '../../app/lib/soroban-read-api';
-import { predinexReadApi } from '../../app/lib/adapters/predinex-read-api';
+import { fetchPredinexContractEvents, getStacksCoreApiBaseUrl, predinexReadApi } from '../../app/lib/adapters/predinex-read-api';
+import { makeSorobanEvent, makeSorobanEventsResponse } from '../helpers/mock-surfaces';
+
+const {
+  mockGetUserActivityFromSoroban,
+  mockGetPool,
+  mockGetUserBet,
+  mockGetTotalVolume,
+  mockGetMarkets,
+  mockGetUserActivity,
+} = vi.hoisted(() => ({
+  mockGetUserActivityFromSoroban: vi.fn(),
+  mockGetPool: vi.fn(),
+  mockGetUserBet: vi.fn(),
+  mockGetTotalVolume: vi.fn(),
+  mockGetMarkets: vi.fn(),
+  mockGetUserActivity: vi.fn(),
+}));
+
+vi.mock('../../app/lib/runtime-config', () => ({
+  getRuntimeConfig: vi.fn(() => ({
+    network: 'testnet',
+    contract: {
+      address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+      name: 'predinex-pool',
+      id: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.predinex-pool',
+    },
+    api: {
+      coreApiUrl: 'https://api.testnet.hiro.so',
+      explorerUrl: 'https://explorer.hiro.so/?chain=testnet',
+      rpcUrl: 'https://api.testnet.hiro.so',
+    },
+    soroban: {
+      rpcUrl: 'https://soroban-testnet.stellar.org',
+      explorerUrl: 'https://stellar.expert/explorer/testnet',
+      contractId: 'CTEST123CONTRACT',
+    },
+  })),
+}));
+
+vi.mock('../../app/lib/stacks-api', () => ({
+  getPool: mockGetPool,
+  getUserBet: mockGetUserBet,
+  getTotalVolume: mockGetTotalVolume,
+  getMarkets: mockGetMarkets,
+  getUserActivity: mockGetUserActivity,
+}));
+
+vi.mock('../../app/lib/soroban-event-service', () => ({
+  getUserActivityFromSoroban: mockGetUserActivityFromSoroban,
+}));
+
+global.fetch = vi.fn();
 
 describe('predinexReadApi', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('uses Soroban read layer for getPool (canonical target-chain read path)', async () => {
-    const mockPool = {
-      id: 1,
-      title: 'Test Pool',
-      description: 'Test Description',
-      creator: 'G...test',
-      outcomeA: 'Yes',
-      outcomeB: 'No',
-      totalA: 1000000,
-      totalB: 2000000,
-      settled: false,
-      expiry: 12345,
-      status: 'active' as const,
-    };
-
-    const mockGetPool = vi.spyOn(sorobanReadApi, 'getPoolFromSoroban').mockResolvedValue({
-      pool: mockPool,
-    });
-
-    const result = await predinexReadApi.getPool(1);
-
-    expect(mockGetPool).toHaveBeenCalledWith(1);
-    expect(result).toEqual(mockPool);
+  it('exposes the configured Stacks core API base URL', () => {
+    expect(getStacksCoreApiBaseUrl()).toBe('https://api.testnet.hiro.so');
   });
 
-  it('uses Soroban read layer for getUserBet (canonical target-chain read path)', async () => {
-    const mockBet = {
-      amountA: 1000000,
-      amountB: 0,
-      totalBet: 1000000,
-    };
+  it('fetches contract events using the configured contract coordinates', async () => {
+    const events = [makeSorobanEvent()];
+    const response = makeSorobanEventsResponse(events);
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => response,
+    } as unknown as Response);
 
-    const mockGetUserBet = vi.spyOn(sorobanReadApi, 'getUserBetFromSoroban').mockResolvedValue({
-      bet: mockBet,
-    });
+    const result = await fetchPredinexContractEvents(5);
 
-    const result = await predinexReadApi.getUserBet(1, 'G...user');
-
-    expect(mockGetUserBet).toHaveBeenCalledWith(1, 'G...user');
-    expect(result).toEqual(mockBet);
+    expect(result).toEqual(response);
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.testnet.hiro.so/extended/v1/contract/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/predinex-pool/events?limit=5'
+    );
   });
 
-  it('uses Soroban read layer for getPoolCount (canonical target-chain read path)', async () => {
-    const mockGetPoolCount = vi.spyOn(sorobanReadApi, 'getPoolCountFromSoroban').mockResolvedValue(42);
+  it('uses the Soroban event service for user activity reads', async () => {
+    mockGetUserActivityFromSoroban.mockResolvedValue([
+      {
+        txId: '0xabc123',
+        type: 'bet-placed',
+        functionName: 'place_bet',
+        timestamp: 1700000000,
+        status: 'success',
+        poolId: 5,
+        amount: 5_000_000,
+        explorerUrl: 'https://stellar.expert/explorer/testnet/tx/0xabc123',
+      },
+    ]);
 
-    const result = await predinexReadApi.getPoolCount();
+    const result = await predinexReadApi.getUserActivitySoroban('GBUSER123STELLARADDRESS', 20);
 
-    expect(mockGetPoolCount).toHaveBeenCalled();
-    expect(result).toBe(42);
+    expect(result).toHaveLength(1);
+    expect(mockGetUserActivityFromSoroban).toHaveBeenCalledWith(
+      'GBUSER123STELLARADDRESS',
+      20,
+      {
+        rpcUrl: 'https://soroban-testnet.stellar.org',
+        explorerUrl: 'https://stellar.expert/explorer/testnet',
+        contractId: 'CTEST123CONTRACT',
+      }
+    );
   });
 
-  it('handles pool not found from Soroban (returns null)', async () => {
-    vi.spyOn(sorobanReadApi, 'getPoolFromSoroban').mockResolvedValue({
-      pool: null,
-    });
-
-    const result = await predinexReadApi.getPool(999);
-
-    expect(result).toBeNull();
-  });
-
-  it('handles Soroban read errors gracefully', async () => {
-    vi.spyOn(sorobanReadApi, 'getPoolFromSoroban').mockResolvedValue({
-      pool: null,
-      error: 'RPC connection failed',
-    });
-
-    const result = await predinexReadApi.getPool(1);
-
-    expect(result).toBeNull();
+  it('retains the legacy stacks-api delegates for compatibility coverage', () => {
+    expect(predinexReadApi.getPool).toBe(mockGetPool);
+    expect(predinexReadApi.getUserBet).toBe(mockGetUserBet);
+    expect(predinexReadApi.getTotalVolume).toBe(mockGetTotalVolume);
+    expect(predinexReadApi.getMarkets).toBe(mockGetMarkets);
+    expect(predinexReadApi.getUserActivity).toBe(mockGetUserActivity);
   });
 });
