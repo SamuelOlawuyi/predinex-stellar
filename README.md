@@ -118,7 +118,9 @@ Predinex Stellar follows a phased approach to bring a premium betting experience
 
 ## 🤝 Contributing & Releases
 
-We welcome contributions! Please see our development guides for more information:
+We welcome contributions! Please read the [Contributing Guide](./CONTRIBUTING.md) first — it covers local setup, running checks, documentation standards, and the issue/PR workflow.
+
+Additional development guides:
 - [Local End-to-End Runbook](./docs/local-runbook.md) — build the contract, deploy to testnet, and wire the web app from a clean checkout
 - [Frontend Development](./web/DEVELOPMENT.md)
 - [Release Process](./RELEASE.md)
