@@ -6,7 +6,6 @@ import { predinexContract } from '../lib/adapters/predinex-contract';
 import { Loader2, Wallet, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import type { Pool } from '@/app/lib/adapters/types';
 import { useWallet } from './WalletAdapterProvider';
-import { useStacks } from './StacksProvider';
 import { useNetworkMismatch } from '@/lib/hooks/useNetworkMismatch';
 import { useTxStatus } from '../lib/hooks/useTxStatus';
 import { TruncatedAddress } from '../../components/TruncatedAddress';
@@ -28,7 +27,6 @@ interface BettingSectionProps {
 
 export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSectionProps) {
     const { isConnected, address, connect } = useWallet();
-    const { userData, authenticate } = useStacks();
     const { isMismatch, expectedNetworkName, switchNetwork } = useNetworkMismatch();
     const { showToast } = useToast();
     const [betAmount, setBetAmount] = useState("");

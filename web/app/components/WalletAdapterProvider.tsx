@@ -2,7 +2,7 @@
 
 import type { UserData } from '@stacks/connect';
 import { ReactNode, createContext, useContext, useMemo } from 'react';
-import { StacksProvider, useStacks } from './StacksProvider';
+import { WalletProvider, useWallet as useWalletAuth } from './WalletProvider';
 import { WalletClient } from '../lib/wallet-adapter';
 
 const WalletContext = createContext<WalletClient | undefined>(undefined);
@@ -15,7 +15,7 @@ function getStxAddressFromUserData(userData: UserData | null | undefined): strin
 }
 
 function WalletAdapterBridge({ children }: { children: ReactNode }) {
-  const { userData, authenticate, signOut, isLoading } = useStacks();
+  const { userData, authenticate, signOut, isLoading } = useWalletAuth();
 
   const value: WalletClient = useMemo(() => {
     const address = getStxAddressFromUserData(userData);
@@ -49,9 +49,9 @@ export function WalletAdapterProvider({
   }
 
   return (
-    <StacksProvider>
+    <WalletProvider>
       <WalletAdapterBridge>{children}</WalletAdapterBridge>
-    </StacksProvider>
+    </WalletProvider>
   );
 }
 

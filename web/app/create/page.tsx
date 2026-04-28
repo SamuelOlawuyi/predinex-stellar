@@ -5,7 +5,7 @@ import { openContractCall } from '@stacks/connect';
 import { stringAsciiCV, uintCV } from '@stacks/transactions';
 import Navbar from '../components/Navbar';
 import AuthGuard from '../components/AuthGuard';
-import { useStacks } from '../components/StacksProvider';
+import { useWallet } from '../components/WalletProvider';
 import { useToast } from '../../providers/ToastProvider';
 import { useLocalStorage } from '../lib/hooks/useLocalStorage';
 import { validatePoolCreationForm } from '../lib/validators';
@@ -33,7 +33,7 @@ const EMPTY_DRAFT: CreateMarketDraft = {
 type FormErrors = Partial<Record<keyof CreateMarketDraft, string>>;
 
 export default function CreateMarket() {
-    const { userData, authenticate } = useStacks();
+    const { userSession, userData } = useWallet();
     const { showToast } = useToast();
     const [draft, setDraft, clearDraft] = useLocalStorage<CreateMarketDraft>(
         CREATE_MARKET_DRAFT_KEY,
