@@ -24,7 +24,7 @@ vi.mock('../../app/components/StacksProvider', () => ({
 
 vi.mock('../../app/lib/adapters/predinex-contract', () => ({
   predinexContract: {
-    placeBet: vi.fn(),
+    placeBetSoroban: vi.fn(),
   },
 }));
 
@@ -137,7 +137,7 @@ describe('BettingSection', () => {
     await user.click(betButton);
 
     expect(showToast).toHaveBeenCalledWith('Please enter a valid amount', 'error');
-    expect(vi.mocked(predinexContract.placeBet)).not.toHaveBeenCalled();
+    expect(vi.mocked(predinexContract.placeBetSoroban)).not.toHaveBeenCalled();
   });
 
   it('shows error toast for bet below minimum amount', async () => {
@@ -153,12 +153,12 @@ describe('BettingSection', () => {
     await user.click(betButton);
 
     expect(showToast).toHaveBeenCalledWith('Minimum bet is 0.1 XLM', 'error');
-    expect(vi.mocked(predinexContract.placeBet)).not.toHaveBeenCalled();
+    expect(vi.mocked(predinexContract.placeBetSoroban)).not.toHaveBeenCalled();
   });
 
   it('calls predinexContract.placeBet with correct parameters when placing bet', async () => {
     vi.mocked(WalletAdapterProvider.useWallet).mockReturnValue(connectedWallet);
-    vi.mocked(predinexContract.placeBet).mockResolvedValue(undefined);
+    vi.mocked(predinexContract.placeBetSoroban).mockResolvedValue({ txHash: '0xbet-1' });
 
     const user = userEvent.setup();
     renderWithProviders(<BettingSection pool={mockPool} poolId={0} />);
@@ -170,11 +170,12 @@ describe('BettingSection', () => {
     await user.click(betButton);
 
     await waitFor(() => {
-      expect(predinexContract.placeBet).toHaveBeenCalledWith(
+      expect(predinexContract.placeBetSoroban).toHaveBeenCalledWith(
         expect.objectContaining({
+          wallet: connectedWallet,
           poolId: 0,
           outcome: 0,
-          amountMicroStx: 15_000_000,
+          amountStroops: 15_000_000,
         })
       );
     });
@@ -183,7 +184,7 @@ describe('BettingSection', () => {
   it('disables buttons while betting is in progress', async () => {
     vi.mocked(WalletAdapterProvider.useWallet).mockReturnValue(connectedWallet);
 
-    vi.mocked(predinexContract.placeBet).mockImplementation(
+    vi.mocked(predinexContract.placeBetSoroban).mockImplementation(
       () => new Promise(() => {}) // Never resolves
     );
 

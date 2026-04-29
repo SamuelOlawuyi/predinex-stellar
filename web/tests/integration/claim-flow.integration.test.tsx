@@ -12,9 +12,10 @@ import type { UserBetData } from '../../app/lib/soroban-read-api';
 import { userActivityCache, userDashboardCache } from '../../app/lib/cache-invalidation';
 
 type ClaimRequest = {
-  functionName: string;
-  onFinish?: (data: { txId: string }) => void;
-  onCancel?: () => void;
+  wallet?: unknown;
+  poolId: number;
+  onStageChange?: (stage: string) => void;
+  onFeeEstimated?: (feeStroops: string) => Promise<boolean>;
 };
 
 function createDeferred<T>() {
@@ -28,14 +29,14 @@ function createDeferred<T>() {
 }
 
 const {
-  mockCallContract,
+  mockClaimWinningsSoroban,
   mockGetUserBets,
   mockGetUserActivitySoroban,
   mockGetPool,
   mockGetUserBet,
   mockUseWallet,
 } = vi.hoisted(() => ({
-  mockCallContract: vi.fn(),
+  mockClaimWinningsSoroban: vi.fn(),
   mockGetUserBets: vi.fn(),
   mockGetUserActivitySoroban: vi.fn(),
   mockGetPool: vi.fn(),
@@ -74,8 +75,10 @@ vi.mock('next/dynamic', () => ({
   },
 }));
 
-vi.mock('../../lib/appkit-transactions', () => ({
-  callContract: mockCallContract,
+vi.mock('../../app/lib/adapters/predinex-contract', () => ({
+  predinexContract: {
+    claimWinningsSoroban: mockClaimWinningsSoroban,
+  },
 }));
 
 vi.mock('../../app/lib/runtime-config', () => ({
@@ -283,15 +286,18 @@ describe('claim flow integration', () => {
   it('refreshes dashboard claim state and activity after a successful claim', async () => {
     const user = userEvent.setup();
     let claimed = false;
-    const claimDeferred = createDeferred<void>();
-    let currentRequest: ClaimRequest | null = null;
+    const claimDeferred = createDeferred<{ txHash: string }>();
 
     mockGetUserBets.mockImplementation(async () => (claimed ? [makeClaimedBet()] : [makeClaimableBet()]));
     mockGetUserActivitySoroban.mockImplementation(async () =>
       claimed ? [makeClaimActivity(), makeBetActivity()] : [makeBetActivity()]
     );
-    mockCallContract.mockImplementation(async (params: ClaimRequest) => {
-      currentRequest = params;
+    mockClaimWinningsSoroban.mockImplementation(async (params: ClaimRequest) => {
+      const proceed = await params.onFeeEstimated?.('2500');
+      if (!proceed) {
+        throw new Error('Transaction cancelled by user');
+      }
+      params.onStageChange?.('signing');
       return claimDeferred.promise;
     });
 
@@ -305,16 +311,16 @@ describe('claim flow integration', () => {
     expect(await screen.findByText('Bet Placed')).toBeInTheDocument();
 
     await user.click(claimButton);
+    await user.click(await screen.findByRole('button', { name: /^confirm$/i }));
 
-    expect(mockCallContract).toHaveBeenCalledWith(
-      expect.objectContaining({ functionName: 'claim-winnings' })
+    expect(mockClaimWinningsSoroban).toHaveBeenCalledWith(
+      expect.objectContaining({ poolId: 42 })
     );
     expect(await screen.findByRole('button', { name: /claiming/i })).toBeDisabled();
 
     claimed = true;
     await act(async () => {
-      currentRequest?.onFinish?.({ txId: '0xclaim-1' });
-      claimDeferred.resolve(undefined);
+      claimDeferred.resolve({ txHash: '0xclaim-1' });
       await claimDeferred.promise;
     });
 
@@ -334,15 +340,19 @@ describe('claim flow integration', () => {
 
     mockGetUserBets.mockResolvedValue([makeClaimableBet()]);
     mockGetUserActivitySoroban.mockResolvedValue([makeBetActivity()]);
-    mockCallContract.mockImplementationOnce(async () => {
+    mockClaimWinningsSoroban.mockImplementationOnce(async (params: ClaimRequest) => {
+      const proceed = await params.onFeeEstimated?.('2500');
+      if (!proceed) {
+        throw new Error('Transaction cancelled by user');
+      }
       throw new Error('Contract execution failed');
     });
 
     renderWithProviders(<DashboardPage />);
 
     await user.click(await screen.findByRole('button', { name: /claim winnings/i }));
+    await user.click(await screen.findByRole('button', { name: /^confirm$/i }));
 
-    expect(await screen.findByText('Contract execution failed')).toBeInTheDocument();
     expect(await screen.findByText('Failed to claim: Contract execution failed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /claim winnings/i })).toBeEnabled();
     expect(mockGetUserBets).toHaveBeenCalledTimes(1);
@@ -352,14 +362,13 @@ describe('claim flow integration', () => {
   it('updates the settled market view to already-claimed after a successful claim', async () => {
     const user = userEvent.setup();
     let claimed = false;
-    const claimDeferred = createDeferred<void>();
-    let currentRequest: ClaimRequest | null = null;
+    const claimDeferred = createDeferred<{ txHash: string }>();
 
     mockGetUserActivitySoroban.mockImplementation(async () =>
       claimed ? [makeClaimActivity()] : [makeBetActivity()]
     );
-    mockCallContract.mockImplementation(async (params: ClaimRequest) => {
-      currentRequest = params;
+    mockClaimWinningsSoroban.mockImplementation(async (params: ClaimRequest) => {
+      params.onStageChange?.('signing');
       return claimDeferred.promise;
     });
 
@@ -370,8 +379,7 @@ describe('claim flow integration', () => {
 
     claimed = true;
     await act(async () => {
-      currentRequest?.onFinish?.({ txId: '0xclaim-1' });
-      claimDeferred.resolve(undefined);
+      claimDeferred.resolve({ txHash: '0xclaim-1' });
       await claimDeferred.promise;
     });
 
@@ -388,14 +396,10 @@ describe('claim flow integration', () => {
 
   it('keeps the settled market view unchanged when the wallet claim is cancelled', async () => {
     const user = userEvent.setup();
-    const claimDeferred = createDeferred<void>();
-    let currentRequest: ClaimRequest | null = null;
+    const claimDeferred = createDeferred<{ txHash: string }>();
 
     mockGetUserActivitySoroban.mockResolvedValue([makeBetActivity()]);
-    mockCallContract.mockImplementation(async (params: ClaimRequest) => {
-      currentRequest = params;
-      return claimDeferred.promise;
-    });
+    mockClaimWinningsSoroban.mockImplementation(async () => claimDeferred.promise);
 
     await renderPoolDetails();
 
@@ -405,9 +409,12 @@ describe('claim flow integration', () => {
     const activityCallsBeforeCancel = mockGetUserActivitySoroban.mock.calls.length;
 
     await act(async () => {
-      currentRequest?.onCancel?.();
-      claimDeferred.resolve(undefined);
-      await claimDeferred.promise;
+      claimDeferred.reject(new Error('Transaction cancelled by user'));
+      try {
+        await claimDeferred.promise;
+      } catch {
+        // The hook handles the cancellation and converts it into UI feedback.
+      }
     });
 
     expect(await screen.findByText('Claim transaction cancelled')).toBeInTheDocument();
