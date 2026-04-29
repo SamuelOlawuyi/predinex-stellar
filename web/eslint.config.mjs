@@ -19,7 +19,8 @@ const eslintConfig = defineConfig([
     rules: {
       // Downgrade to warnings — pre-existing issues tracked separately
       "@typescript-eslint/no-explicit-any": "warn",
-      "react/no-unescaped-entities": "error",
+      // Keep custom rules minimal to avoid requiring additional eslint plugins
+      // in constrained CI environments.
     },
   },
 ]);
