@@ -90,6 +90,12 @@ pub enum DataKey {
     LargePoolCoolingPeriodSecs,
     /// If present and in the future, pool is in mandatory cooling period.
     PoolCoolingUntil(u32),
+    /// Max bets allowed per wallet within rate-limit window. 0 disables.
+    RateLimitMaxBetsPerWindow,
+    /// Rate-limit window length in seconds. 0 disables.
+    RateLimitWindowSecs,
+    /// Per-wallet rate-limit usage state.
+    WalletRateLimit(Address),
 }
 
 // #189 — TTL bump policy for persistent storage entries.
@@ -197,6 +203,10 @@ pub enum ContractError {
     PoolSizeLimitExceeded = 46,
     /// Cooling period setting is invalid for current threshold config.
     InvalidCoolingPeriod = 47,
+    /// Configured rate-limit values are invalid.
+    InvalidRateLimitConfig = 48,
+    /// Wallet exceeded allowed request rate.
+    RateLimitExceeded = 49,
 }
 
 /// #176 — Settlement source tag indicating who initiated pool settlement.
@@ -275,6 +285,30 @@ pub struct CircuitBreakerConfig {
     pub max_pool_size: i128,
     pub large_pool_threshold: i128,
     pub cooling_period_secs: u64,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct RateLimitConfig {
+    pub max_bets_per_window: u32,
+    pub window_secs: u64,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct WalletRateLimitState {
+    pub window_start: u64,
+    pub used: u32,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct WalletRateLimitStatus {
+    pub max_bets_per_window: u32,
+    pub window_secs: u64,
+    pub window_start: u64,
+    pub used: u32,
+    pub remaining: u32,
 }
 
 /// Claim status for a user in a specific pool.
@@ -723,6 +757,92 @@ impl PredinexContract {
         }
     }
 
+    /// Configure per-wallet rate limiting.
+    ///
+    /// Only treasury recipient may call this.
+    /// - `max_bets_per_window == 0` OR `window_secs == 0` disables limiter
+    /// - Otherwise both must be > 0
+    pub fn set_rate_limit_config(
+        env: Env,
+        caller: Address,
+        max_bets_per_window: u32,
+        window_secs: u64,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+        let treasury_recipient: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TreasuryRecipient)
+            .ok_or(ContractError::NotInitialized)?;
+        if caller != treasury_recipient {
+            return Err(ContractError::Unauthorized);
+        }
+        if (max_bets_per_window == 0 && window_secs > 0)
+            || (max_bets_per_window > 0 && window_secs == 0)
+        {
+            return Err(ContractError::InvalidRateLimitConfig);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::RateLimitMaxBetsPerWindow, &max_bets_per_window);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RateLimitWindowSecs, &window_secs);
+
+        env.events().publish(
+            (Symbol::new(&env, "rate_limit_config_set"), event_version(&env)),
+            (max_bets_per_window, window_secs),
+        );
+        Ok(())
+    }
+
+    /// Return configured per-wallet rate limiting thresholds.
+    pub fn get_rate_limit_config(env: Env) -> RateLimitConfig {
+        RateLimitConfig {
+            max_bets_per_window: env
+                .storage()
+                .persistent()
+                .get::<_, u32>(&DataKey::RateLimitMaxBetsPerWindow)
+                .unwrap_or(0),
+            window_secs: env
+                .storage()
+                .persistent()
+                .get::<_, u64>(&DataKey::RateLimitWindowSecs)
+                .unwrap_or(0),
+        }
+    }
+
+    /// Return live per-wallet usage against current rate-limit config.
+    pub fn get_wallet_rate_limit_status(env: Env, user: Address) -> WalletRateLimitStatus {
+        let cfg = Self::get_rate_limit_config(env.clone());
+        let now = env.ledger().timestamp();
+        let state = env
+            .storage()
+            .persistent()
+            .get::<_, WalletRateLimitState>(&DataKey::WalletRateLimit(user))
+            .unwrap_or(WalletRateLimitState {
+                window_start: now,
+                used: 0,
+            });
+        let (window_start, used) = if cfg.window_secs > 0
+            && now.saturating_sub(state.window_start) >= cfg.window_secs
+        {
+            (now, 0u32)
+        } else {
+            (state.window_start, state.used)
+        };
+        let remaining = cfg.max_bets_per_window.saturating_sub(used);
+
+        WalletRateLimitStatus {
+            max_bets_per_window: cfg.max_bets_per_window,
+            window_secs: cfg.window_secs,
+            window_start,
+            used,
+            remaining,
+        }
+    }
+
     /// #193 — Return the complete contract configuration in a single call.
     ///
     /// Provides all configuration values needed for frontend bootstrapping
@@ -991,6 +1111,46 @@ impl PredinexContract {
 
         if outcome > 1 {
             return Err(ContractError::InvalidOutcome);
+        }
+
+        // Per-wallet rate limiting for abuse prevention.
+        let max_bets_per_window: u32 = env
+            .storage()
+            .persistent()
+            .get::<_, u32>(&DataKey::RateLimitMaxBetsPerWindow)
+            .unwrap_or(0);
+        let window_secs: u64 = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::RateLimitWindowSecs)
+            .unwrap_or(0);
+        if max_bets_per_window > 0 && window_secs > 0 {
+            let now = env.ledger().timestamp();
+            let key = DataKey::WalletRateLimit(user.clone());
+            let mut rate_state = env
+                .storage()
+                .persistent()
+                .get::<_, WalletRateLimitState>(&key)
+                .unwrap_or(WalletRateLimitState {
+                    window_start: now,
+                    used: 0,
+                });
+
+            if now.saturating_sub(rate_state.window_start) >= window_secs {
+                rate_state.window_start = now;
+                rate_state.used = 0;
+            }
+            if rate_state.used >= max_bets_per_window {
+                return Err(ContractError::RateLimitExceeded);
+            }
+            rate_state.used = rate_state
+                .used
+                .checked_add(1)
+                .ok_or(ContractError::RateLimitExceeded)?;
+            env.storage().persistent().set(&key, &rate_state);
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, POOL_BUMP_THRESHOLD, POOL_BUMP_TARGET);
         }
 
         // Enforce per-pool bet limits (admin-configurable).

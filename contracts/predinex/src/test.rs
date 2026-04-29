@@ -2975,3 +2975,48 @@ fn test_circuit_breaker_admin_override_unfreezes_pool() {
     t.client.place_bet(&user_a, &pool_id, &0, &10);
     assert_eq!(t.client.get_pool(&pool_id).unwrap().status, PoolStatus::Open);
 }
+
+#[test]
+#[should_panic]
+fn test_rate_limit_blocks_wallet_when_threshold_exceeded() {
+    let t = setup();
+    t.client.set_rate_limit_config(&t.admin, &2, &60);
+
+    let pool_id = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_id, &0, &10);
+    t.client.place_bet(&t.user, &pool_id, &1, &10);
+    t.client.place_bet(&t.user, &pool_id, &0, &10);
+}
+
+#[test]
+fn test_rate_limit_resets_after_window() {
+    let t = setup();
+    t.client.set_rate_limit_config(&t.admin, &2, &60);
+
+    let pool_id = make_pool(&t);
+    t.client.place_bet(&t.user, &pool_id, &0, &10);
+    t.client.place_bet(&t.user, &pool_id, &1, &10);
+
+    t.env.ledger().with_mut(|li| li.timestamp += 61);
+    t.client.place_bet(&t.user, &pool_id, &0, &10);
+
+    let status = t.client.get_wallet_rate_limit_status(&t.user);
+    assert_eq!(status.used, 1);
+    assert_eq!(status.remaining, 1);
+}
+
+#[test]
+fn test_rate_limit_status_reports_remaining_capacity() {
+    let t = setup();
+    t.client.set_rate_limit_config(&t.admin, &3, &120);
+    let pool_id = make_pool(&t);
+
+    t.client.place_bet(&t.user, &pool_id, &0, &10);
+    t.client.place_bet(&t.user, &pool_id, &1, &10);
+
+    let status = t.client.get_wallet_rate_limit_status(&t.user);
+    assert_eq!(status.max_bets_per_window, 3);
+    assert_eq!(status.window_secs, 120);
+    assert_eq!(status.used, 2);
+    assert_eq!(status.remaining, 1);
+}
