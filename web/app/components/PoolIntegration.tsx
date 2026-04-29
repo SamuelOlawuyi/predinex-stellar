@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWallet } from './WalletAdapterProvider';
+import { useNetworkMismatch } from '@/lib/hooks/useNetworkMismatch';
 import { Loader2, AlertCircle, CheckCircle, TrendingUp, Users, RefreshCw } from 'lucide-react';
 import { formatDisplayAddress } from '../lib/address-display';
 import { getMarkets, type Pool } from '../lib/stacks-api';
@@ -17,6 +18,7 @@ interface PoolStats {
 export default function PoolIntegration() {
   const router = useRouter();
   const { isConnected, connect } = useWallet();
+  const { isMismatch, expectedNetworkName } = useNetworkMismatch();
   const [pools, setPools] = useState<Pool[]>([]);
   const [stats, setStats] = useState<PoolStats>({
     totalPools: 0,
@@ -205,12 +207,18 @@ export default function PoolIntegration() {
                   {/* Action Button */}
                   {!pool.settled && (
                     <div className="space-y-2">
-                      <button
-                        onClick={isConnected ? () => {} : connect}
-                        className="w-full py-2 bg-primary hover:bg-violet-600 text-white font-bold rounded-lg transition-all"
+                      <button 
+                        onClick={isMismatch ? undefined : (isConnected ? () => {} : connect)}
+                        disabled={isMismatch}
+                        className="w-full py-2 bg-primary hover:bg-violet-600 text-white font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isConnected ? 'Place Bet' : 'Connect Wallet'}
+                        {isMismatch ? 'Wrong Network' : isConnected ? 'Place Bet' : 'Connect Wallet'}
                       </button>
+                      {isMismatch && (
+                        <p className="text-[10px] text-center text-yellow-500 font-medium">
+                          Please switch to {expectedNetworkName} to interact
+                        </p>
+                      )}
                     </div>
                   )}
 

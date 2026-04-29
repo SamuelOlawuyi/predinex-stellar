@@ -10,6 +10,8 @@ import * as TxStatusHook from '../../app/lib/hooks/useTxStatus';
 import { useToast } from '../../providers/ToastProvider';
 import { predinexContract } from '../../app/lib/adapters/predinex-contract';
 import { renderWithProviders } from '../helpers/renderWithProviders';
+import * as NetworkMismatch from '../../lib/hooks/useNetworkMismatch';
+import { toastMessages } from '../../lib/toast-messages';
 
 // Mock WalletAdapterProvider hook
 vi.mock('../../app/components/WalletAdapterProvider', () => ({
@@ -41,6 +43,11 @@ vi.mock('../../providers/ToastProvider', () => ({
   // ToastProvider is used by renderWithProviders; pass children through so the
   // wrapper renders without throwing "No ToastProvider export" errors.
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+// Mock useNetworkMismatch hook
+vi.mock('../../lib/hooks/useNetworkMismatch', () => ({
+  useNetworkMismatch: vi.fn(),
 }));
 
 
@@ -85,15 +92,6 @@ describe('BettingSection', () => {
     vi.mocked(useToast).mockReturnValue({
       showToast,
     });
-    vi.mocked(StacksProvider.useStacks).mockReturnValue({
-      userData: null,
-      authenticate: vi.fn(),
-      userSession: {} as never,
-      setUserData: vi.fn(),
-      signOut: vi.fn(),
-      openWalletModal: vi.fn(),
-      isLoading: false,
-    });
     vi.mocked(NetworkMismatch.useNetworkMismatch).mockReturnValue({
       isMismatch: false,
       expectedNetworkType: 'testnet',
@@ -101,10 +99,6 @@ describe('BettingSection', () => {
       currentNetworkName: 'Stellar Testnet',
       switchNetwork: vi.fn(),
     });
-    vi.mocked(TxStatusHook.useTxStatus).mockReturnValue([
-      { status: 'idle', txId: null, error: null },
-      vi.fn(),
-    ]);
   });
 
   it('renders betting section with pool information', () => {
@@ -153,7 +147,7 @@ describe('BettingSection', () => {
     await user.click(betButton);
 
     expect(showToast).toHaveBeenCalledWith('Minimum bet is 0.1 XLM', 'error');
-    expect(vi.mocked(predinexContract.placeBetSoroban)).not.toHaveBeenCalled();
+    expect(vi.mocked(predinexContract.placeBet)).not.toHaveBeenCalled();
   });
 
   it('calls predinexContract.placeBet with correct parameters when placing bet', async () => {
@@ -175,7 +169,7 @@ describe('BettingSection', () => {
           wallet: connectedWallet,
           poolId: 0,
           outcome: 0,
-          amountStroops: 15_000_000,
+          amountMicroStx: 15_000_000,
         })
       );
     });
