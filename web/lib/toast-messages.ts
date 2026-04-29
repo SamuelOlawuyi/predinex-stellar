@@ -5,6 +5,9 @@ import { getConnectivityMessage } from '../app/lib/network-errors';
 /** Minimum bet in XLM — shared by validation, inline hints, and toast copy. */
 export const MIN_BET_XLM = 0.1;
 
+// Backwards-compatible alias used by unit tests and older UI copy.
+export const MIN_BET_STX = MIN_BET_XLM;
+
 export type ToastPayload = { message: string; type: ToastType };
 
 /**
