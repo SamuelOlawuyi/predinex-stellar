@@ -57,6 +57,15 @@ pub enum DataKey {
     TreasuryRecipient,
     DelegatedSettler(u32),
     FreezeAdmin,
+    /// Per-pool minimum bet amount (in raw token units / i128).
+    ///
+    /// When absent, defaults to `DEFAULT_MIN_BET_STROOPS`.
+    PoolMinBet(u32),
+    /// Per-pool maximum bet amount (in raw token units / i128).
+    ///
+    /// When absent, defaults to `DEFAULT_MAX_BET_STROOPS`.
+    /// A value of `0` is treated as "no maximum" in `place_bet`.
+    PoolMaxBet(u32),
     /// #179 — per-pool creation fee in stroops. Set by the admin via
     /// `set_creation_fee`; defaults to 0 (no fee) when absent.
     CreationFee,
@@ -108,6 +117,15 @@ const MAX_DESCRIPTION_LENGTH: u32 = 1_000;
 /// #154 — Maximum length for pool outcome labels in bytes.
 const MAX_OUTCOME_LENGTH: u32 = 50;
 
+/// Default per-pool minimum bet: 0 (no minimum).
+///
+/// Admin/treasury can set explicit limits per pool. When absent, we
+/// intentionally avoid enforcing UI-level constraints so existing pools /
+/// contract tests keep working.
+const DEFAULT_MIN_BET_STROOPS: i128 = 0;
+/// Default per-pool maximum bet: 0 (no maximum).
+const DEFAULT_MAX_BET_STROOPS: i128 = 0;
+
 /// #156 — Typed contract error model. Replaces string panics for all failure
 /// paths so SDK consumers can match on a stable error code rather than parsing
 /// panic strings, and so error compatibility is preserved across upgrades.
@@ -157,6 +175,10 @@ pub enum ContractError {
     PoolTotalOverflow = 41,
     UserBetOverflow = 42,
     TreasuryOverflow = 43,
+    /// Bet amount is below the configured per-pool minimum.
+    BetBelowMinBet = 44,
+    /// Bet amount is above the configured per-pool maximum.
+    BetAboveMaxBet = 45,
 }
 
 /// #176 — Settlement source tag indicating who initiated pool settlement.
@@ -217,6 +239,16 @@ pub struct Pool {
     pub expiry: u64,
     /// Current operational status of the pool. Defaults to `Open`.
     pub status: PoolStatus,
+}
+
+/// Per-pool bet limits exposed for frontend validation.
+///
+/// Values are in raw token units (the same units accepted by `place_bet`).
+#[derive(Clone)]
+#[contracttype]
+pub struct PoolBetLimits {
+    pub min_bet: i128,
+    pub max_bet: i128,
 }
 
 /// Claim status for a user in a specific pool.
@@ -531,6 +563,71 @@ impl PredinexContract {
             .unwrap_or(PROTOCOL_FEE_DEFAULT_BPS)
     }
 
+    /// Set per-pool bet limits.
+    ///
+    /// Only the treasury recipient may call this (same permission model as
+    /// other admin configuration).
+    ///
+    /// - `min_bet` must be >= 0
+    /// - `max_bet` must be >= 0, and either be 0 (no max) or >= `min_bet`
+    pub fn set_pool_bet_limits(
+        env: Env,
+        caller: Address,
+        pool_id: u32,
+        min_bet: i128,
+        max_bet: i128,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+
+        let treasury_recipient: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TreasuryRecipient)
+            .ok_or(ContractError::NotInitialized)?;
+        if caller != treasury_recipient {
+            return Err(ContractError::Unauthorized);
+        }
+
+        // Ensure pool exists.
+        let _pool_exists: Pool = env
+            .storage()
+            .persistent()
+            .get::<_, Pool>(&DataKey::Pool(pool_id))
+            .ok_or(ContractError::PoolNotFound)?;
+
+        if min_bet < 0 || max_bet < 0 {
+            return Err(ContractError::InvalidBetAmount);
+        }
+        if max_bet != 0 && min_bet > max_bet {
+            return Err(ContractError::InvalidBetAmount);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PoolMinBet(pool_id), &min_bet);
+        env.storage()
+            .persistent()
+            .set(&DataKey::PoolMaxBet(pool_id), &max_bet);
+
+        // Keep bet limit entries alive alongside the pool for UI reads.
+        env.storage().persistent().extend_ttl(
+            &DataKey::PoolMinBet(pool_id),
+            POOL_BUMP_THRESHOLD,
+            POOL_BUMP_TARGET,
+        );
+        env.storage().persistent().extend_ttl(
+            &DataKey::PoolMaxBet(pool_id),
+            POOL_BUMP_THRESHOLD,
+            POOL_BUMP_TARGET,
+        );
+
+        env.events().publish(
+            (Symbol::new(&env, "pool_bet_limits_set"), event_version(&env), pool_id),
+            (min_bet, max_bet),
+        );
+        Ok(())
+    }
+
     /// #193 — Return the complete contract configuration in a single call.
     ///
     /// Provides all configuration values needed for frontend bootstrapping
@@ -782,6 +879,26 @@ impl PredinexContract {
 
         if outcome > 1 {
             return Err(ContractError::InvalidOutcome);
+        }
+
+        // Enforce per-pool bet limits (admin-configurable).
+        let min_bet: i128 = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::PoolMinBet(pool_id))
+            .unwrap_or(DEFAULT_MIN_BET_STROOPS);
+        let max_bet: i128 = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::PoolMaxBet(pool_id))
+            .unwrap_or(DEFAULT_MAX_BET_STROOPS);
+
+        if min_bet > 0 && amount < min_bet {
+            return Err(ContractError::BetBelowMinBet);
+        }
+        // max_bet == 0 => no maximum.
+        if max_bet > 0 && amount > max_bet {
+            return Err(ContractError::BetAboveMaxBet);
         }
 
         let token_address = env
@@ -1823,6 +1940,47 @@ impl PredinexContract {
             );
         }
         pool
+    }
+
+    /// Return the per-pool bet limits (min/max) used by `place_bet`.
+    ///
+    /// When min/max were never explicitly set by the admin, returns defaults.
+    pub fn get_pool_bet_limits(env: Env, pool_id: u32) -> Option<PoolBetLimits> {
+        let pool_exists: Option<Pool> = env.storage().persistent().get(&DataKey::Pool(pool_id));
+        if pool_exists.is_none() {
+            return None;
+        }
+
+        let min_bet: i128 = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::PoolMinBet(pool_id))
+            .unwrap_or(DEFAULT_MIN_BET_STROOPS);
+        let max_bet: i128 = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::PoolMaxBet(pool_id))
+            .unwrap_or(DEFAULT_MAX_BET_STROOPS);
+
+        // Keep bet limit entries alive while the pool is being queried.
+        // Note: legacy pools may not have explicit entries set yet, so guard
+        // against missing keys.
+        if env.storage().persistent().has(&DataKey::PoolMinBet(pool_id)) {
+            env.storage().persistent().extend_ttl(
+                &DataKey::PoolMinBet(pool_id),
+                POOL_BUMP_THRESHOLD,
+                POOL_BUMP_TARGET,
+            );
+        }
+        if env.storage().persistent().has(&DataKey::PoolMaxBet(pool_id)) {
+            env.storage().persistent().extend_ttl(
+                &DataKey::PoolMaxBet(pool_id),
+                POOL_BUMP_THRESHOLD,
+                POOL_BUMP_TARGET,
+            );
+        }
+
+        Some(PoolBetLimits { min_bet, max_bet })
     }
 
     pub fn get_pool_count(env: Env) -> u32 {
