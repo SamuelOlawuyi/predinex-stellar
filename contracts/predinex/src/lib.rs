@@ -107,7 +107,7 @@ const MAX_OUTCOME_LENGTH: u32 = 50;
 /// Explicit lifecycle status for a prediction pool.
 ///
 /// Transitions:
-///   Open  ──(cancel_pool, no bets placed)──►  Cancelled  (terminal)
+///   Open  ──(cancel_pool)──►  Cancelled  (terminal)
 ///   Open  ──(void_pool called)──►  Voided
 ///   Open  ──(expiry reached + settle_pool called)──►  Settled(winning_outcome)
 ///   Open  ──(freeze_pool called)──►  Frozen
@@ -778,13 +778,13 @@ impl PredinexContract {
         );
     }
 
-    /// #160 — Cancel a pool before any bet has been placed.
+    /// #160 — Cancel a pool before it is settled.
     ///
-    /// Only the pool creator may call this, and only while both outcome totals
-    /// remain at zero (i.e. no participant has entered the pool). Once cancelled
-    /// the pool transitions to the `Cancelled` terminal state; it cannot be
-    /// settled, voided, or bet into afterward. A `cancel_pool` event is emitted
-    /// so indexers and the UI can update their state immediately.
+    /// Only the pool creator may call this, and only while the pool is still open.
+    /// Once cancelled the pool transitions to the `Cancelled` terminal state; it cannot be
+    /// settled, voided, or bet into afterward. Participants can claim refunds of their
+    /// original bet amounts. A `cancel_pool` event is emitted so indexers and the UI
+    /// can update their state immediately.
     pub fn cancel_pool(env: Env, creator: Address, pool_id: u32) {
         creator.require_auth();
 
@@ -802,14 +802,16 @@ impl PredinexContract {
             panic!("Pool cannot be cancelled in its current state");
         }
 
-        if pool.total_a > 0 || pool.total_b > 0 {
-            panic!("Pool has bets; cannot cancel");
-        }
-
         pool.status = PoolStatus::Cancelled;
         env.storage()
             .persistent()
             .set(&DataKey::Pool(pool_id), &pool);
+        // #189 — cancelled pool must stay accessible for refund claims.
+        env.storage().persistent().extend_ttl(
+            &DataKey::Pool(pool_id),
+            POOL_BUMP_THRESHOLD,
+            POOL_BUMP_TARGET,
+        );
 
         env.events().publish(
             (
@@ -979,7 +981,7 @@ impl PredinexContract {
         );
     }
 
-    /// Refund a user's original stake from a voided pool. No fee is taken.
+    /// Refund a user's original stake from a voided or cancelled pool. No fee is taken.
     /// The bet entry is removed after the refund to prevent double-claims.
     pub fn claim_refund(env: Env, user: Address, pool_id: u32) -> i128 {
         user.require_auth();
@@ -990,8 +992,8 @@ impl PredinexContract {
             .get::<_, Pool>(&DataKey::Pool(pool_id))
             .expect("Pool not found");
 
-        if pool.status != PoolStatus::Voided {
-            panic!("Pool not voided");
+        if pool.status != PoolStatus::Voided && pool.status != PoolStatus::Cancelled {
+            panic!("Pool not voided or cancelled");
         }
 
         let user_bet = env
@@ -1623,7 +1625,7 @@ impl PredinexContract {
     /// | Settled(w)  | Yes, bet on winning side   | Claimable         |
     /// | Settled(w)  | Yes, bet on losing side    | NotEligible       |
     /// | Voided      | Yes                        | RefundClaimable   |
-    /// | Cancelled   | No (enforced by cancel_pool) | NeverBet        |
+    /// | Cancelled   | Yes                        | RefundClaimable   |
     /// | Any         | No (was removed by claim)  | AlreadyClaimed**  |
     ///
     /// */**  Once a claim is made the bet record is deleted, so the method
@@ -1645,7 +1647,10 @@ impl PredinexContract {
             .get(&DataKey::UserBet(pool_id, user));
 
         match pool.status {
-            PoolStatus::Cancelled => ClaimStatus::NeverBet,
+            PoolStatus::Cancelled => match bet {
+                Some(_) => ClaimStatus::RefundClaimable,
+                None => ClaimStatus::NeverBet,
+            },
             PoolStatus::Voided => match bet {
                 Some(_) => ClaimStatus::RefundClaimable,
                 None => ClaimStatus::AlreadyClaimed,
@@ -1684,8 +1689,11 @@ impl PredinexContract {
     /// | Pool status          | Bet record          | Result              |
     /// |----------------------|---------------------|---------------------|
     /// | Open / Frozen /      | any                 | Unclaimable         |
-    /// | Disputed / Cancelled |                     |                     |
-    /// | Voided               | any                 | Unclaimable         |
+    /// | Disputed             |                     |                     |
+    /// | Cancelled            | absent / claimed    | NeverBet            |
+    /// | Cancelled            | present             | Claimable(total_bet)|
+    /// | Voided               | absent / claimed    | NeverBet            |
+    /// | Voided               | present             | Claimable(total_bet)|
     /// | Settled(w)           | absent / claimed    | NeverBet            |
     /// | Settled(w)           | losing side only    | NotEligible         |
     /// | Settled(w)           | winning side > 0    | Claimable(amount)   |
@@ -1701,6 +1709,18 @@ impl PredinexContract {
 
         let winning_outcome = match pool.status {
             PoolStatus::Settled(outcome) => outcome,
+            PoolStatus::Voided | PoolStatus::Cancelled => {
+                // For voided/cancelled pools, return the user's total bet as refund
+                let bet: UserBet = match env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::UserBet(pool_id, user))
+                {
+                    Some(b) => b,
+                    None => return ClaimPreview::NeverBet,
+                };
+                return ClaimPreview::Claimable(bet.total_bet);
+            }
             _ => return ClaimPreview::Unclaimable,
         };
 
