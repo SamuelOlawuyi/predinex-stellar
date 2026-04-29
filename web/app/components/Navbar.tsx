@@ -36,6 +36,11 @@ export default function Navbar() {
                                 Create
                             </Link>
                             {isConnected && (
+                                <Link href="/transactions" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors" aria-label="View transaction history">
+                                    Transactions
+                                </Link>
+                            )}
+                            {isConnected && (
                                 <Link href="/activity" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors" aria-label="View activity feed">
                                     Activity
                                 </Link>
@@ -121,6 +126,15 @@ export default function Navbar() {
                             >
                                 Create
                             </Link>
+                            {isConnected && (
+                                <Link
+                                    href="/transactions"
+                                    className="block px-3 py-2 text-base font-medium text-muted-foreground hover:text-primary hover:bg-muted/50 rounded-lg transition-colors"
+                                    onClick={() => setIsMenuOpen(false)}
+                                >
+                                    Transactions
+                                </Link>
+                            )}
                             {isConnected && (
                                 <Link
                                     href="/activity"
