@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { LogOut, Menu, X, Wallet } from "lucide-react";
+import { LogOut, Menu, X, Wallet, Moon, Sun } from "lucide-react";
 import { useWallet } from './WalletAdapterProvider';
+import { useTheme } from '../context/ThemeContext';
 import { ICON_CLASS } from "../lib/constants";
 import { WalletAddressCopyButton } from "../../components/WalletAddressCopyButton";
 import { NetworkMismatchWarning } from './NetworkMismatchWarning';
 
 export default function Navbar() {
     const { isConnected, address, connect, disconnect } = useWallet();
+    const { theme, toggleTheme } = useTheme();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     return (
@@ -50,6 +52,14 @@ export default function Navbar() {
 
                     {/* User Info & Connect Button - Desktop */}
                     <div className="hidden md:flex items-center gap-4">
+                        <button
+                            onClick={toggleTheme}
+                            className="p-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-full border border-primary/20 transition-all hover:scale-110 active:scale-95"
+                            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+                            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+                        >
+                            {theme === 'light' ? <Moon className={ICON_CLASS.sm} /> : <Sun className={ICON_CLASS.sm} />}
+                        </button>
                         {isConnected && address ? (
                             <div className="flex items-center gap-3">
                                 <WalletAddressCopyButton address={address} />
